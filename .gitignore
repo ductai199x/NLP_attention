@@ -1,5 +1,2 @@
-# virtualenv 
-bin/
-etc/
-lib/
-share/
+.idea/
+.ipynb_checkpoints/
