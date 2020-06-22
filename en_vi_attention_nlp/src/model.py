@@ -2,14 +2,13 @@ import tensorflow as tf
 
 from keras.models import Model
 from keras.layers import Input, Dense, Embedding, Lambda, TimeDistributed, Add, Conv1D, Layer, LayerNormalization
-# from kulc.layer_normalization import LayerNormalization
-# from kulc.attention import MultiHeadAttention
 from multihead import MultiHeadAttention
 import numpy as np
 import keras.backend as K
 
 
 class PositionWiseFeedForward(Layer):
+    # def __init__(self, d_model=512, d_ff=2048, **kwargs):
     def __init__(self, d_model=512, d_ff=512, **kwargs):
         super(PositionWiseFeedForward, self).__init__()
         self._d_model = d_model
@@ -34,8 +33,7 @@ class EncoderLayer(Layer):
         self._add_b = Add()
 
     def __call__(self, x):
-        y = self._mha(x, x, x)
-        # y = self._mha([x, x, x])
+        y = self._mha([x, x, x])
         y = self._add_a([x, y])
         x = self._ln_a(y)
 
@@ -63,13 +61,11 @@ class DecoderLayer(Layer):
         self._return_attention = return_attention
 
     def __call__(self, x, encoder_output):
-        y, self_atn = self._mha_a(x, x, x)
-        # y, self_atn = self._mha_a([x, x, x])
+        y, self_atn = self._mha_a([x, x, x])
         y = self._add_a([x, y])
         x = self._ln_a(y)
 
-        y, enc_atn = self._mha_b(x, encoder_output, encoder_output)
-        # y, enc_atn = self._mha_b([x, encoder_output, encoder_output])
+        y, enc_atn = self._mha_b([x, encoder_output, encoder_output])
         y = self._add_b([x, y])
         x = self._ln_b(y)
 
@@ -78,7 +74,7 @@ class DecoderLayer(Layer):
         x = self._ln_c(y)
 
         if self._return_attention:
-            return [x, self_atn, enc_atn]
+            return x, self_atn, enc_atn
         else:
             return x
 
@@ -94,7 +90,6 @@ class Encoder(Model):
 
         self._layers = [EncoderLayer(
             h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=d_inner_hid) for _ in range(n)]
-        
 
     def __call__(self, x):
         x_embedded = self._embedding(x)
@@ -119,7 +114,6 @@ class Decoder(Model):
 
         self._layers = [DecoderLayer(
             h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=d_inner_hid) for _ in range(n)]
-        
 
     def __call__(self, x, encoder_output, return_attention=False):
         x_embedded = self._embedding(x)
@@ -138,61 +132,71 @@ class Decoder(Model):
                 enc_atts.append(enc_att)
 
         if return_attention:
-            return x, self_atts, enc_atts
+            return [x, self_atts, enc_atts]
         else:
             return x
 
-        
-def build_transformer(source_vocabulary_size, target_vocabulary_size, max_length, share_word_embedding=False, 
-                        n=6, h=8, d_k=64, d_v=64, d_model=512, optimizer="adam", null_token_value=0):
+
+def build_transformer(source_vocabulary_size, target_vocabulary_size, max_length, share_word_embedding=False,
+                      n=6, h=8, d_k=64, d_v=64, d_model=512, optimizer="adam", null_token_value=0):
     source_input = Input(shape=(None,), name="source_input")
     target_input = Input(shape=(None,), name="target_input")
 
-    enc_input = Lambda(lambda x:x[:,1:])(source_input)
-    dec_input  = Lambda(lambda x:x[:,:-1])(target_input)
-    dec_target_output = Lambda(lambda x:x[:,1:])(target_input)
+    enc_input = Lambda(lambda x: x[:, 1:])(source_input)
+    dec_input = Lambda(lambda x: x[:, :-1])(target_input)
+    dec_target_output = Lambda(lambda x: x[:, 1:])(target_input)
 
     # create embedding
-    source_word_embedding = Embedding(source_vocabulary_size, d_model, name="source_embedding" if share_word_embedding else "source_embedding")  # weights=[_get_positional_encoding_matrix(max_length, d_model)]
+    # weights=[_get_positional_encoding_matrix(max_length, d_model)]
+    source_word_embedding = Embedding(
+        source_vocabulary_size, d_model, name="source_embedding" if share_word_embedding else "source_embedding")
     if share_word_embedding:
         target_word_embedding = source_word_embedding
     else:
-        target_word_embedding = Embedding(target_vocabulary_size, d_model, name="target_embedding")
+        target_word_embedding = Embedding(
+            target_vocabulary_size, d_model, name="target_embedding")
     # embedding for the position encoding
-    position_encoding = Embedding(max_length, d_model, trainable=False, weights=[_get_positional_encoding_matrix(max_length, d_model)], name="position_embedding")
+    position_encoding = Embedding(max_length, d_model, trainable=False, weights=[
+                                  _get_positional_encoding_matrix(max_length, d_model)], name="position_embedding")
 
-    enc = Encoder(source_word_embedding, position_encoding, n=n, h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=512)
-    dec = Decoder(target_word_embedding, position_encoding, n=n, h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=512)
+    enc = Encoder(source_word_embedding, position_encoding, n=n,
+                  h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=512)
+    dec = Decoder(target_word_embedding, position_encoding, n=n,
+                  h=h, d_k=d_k, d_v=d_v, d_model=d_model, d_inner_hid=512)
 
     enc_output = enc(enc_input)
     dec_output = dec(dec_input, enc_output)
 
     # lin_dense = TimeDistributed(Dense(d_model))
-    fin_output = TimeDistributed(Dense(target_vocabulary_size, activation=None, use_bias=False), name="output") # "softmax"
+    fin_output = TimeDistributed(Dense(
+        target_vocabulary_size, activation=None, use_bias=False), name="output")  # "softmax"
 
     # lin_dense_out = lin_dense(dec_output)
-    fin_output_out = fin_output(dec_output) # lin_dense_out)
+    fin_output_out = fin_output(dec_output)  # lin_dense_out)
 
-    accuracy = Lambda(_get_accuracy, arguments={"null_token_value": null_token_value})([fin_output_out, dec_target_output])
-    loss = Lambda(_get_loss, arguments={"null_token_value": null_token_value})([fin_output_out, dec_target_output])
+    accuracy = Lambda(_get_accuracy, arguments={"null_token_value": null_token_value})(
+        [fin_output_out, dec_target_output])
+    loss = Lambda(_get_loss, arguments={"null_token_value": null_token_value})(
+        [fin_output_out, dec_target_output])
 
     train_model = Model(inputs=[source_input, target_input], outputs=loss)
     train_model.add_loss([loss])
     train_model.compile(optimizer, None)
     train_model.metrics_names.append('accuracy')
-    train_model.metrics_tensors.append(accuracy)
+    train_model.metrics.append(accuracy)
 
     inference_model = Model([source_input, target_input], fin_output_out)
 
     return train_model, inference_model
 
-def create_model(source_vocabulary_size, target_vocabulary_size, max_length, share_word_embedding=False, 
-                    n=6, h=8, d_k=64, d_v=64, d_model=512, optimizer="adam", null_token_value=0):
+
+def create_model(source_vocabulary_size, target_vocabulary_size, max_length, share_word_embedding=False,
+                 n=6, h=8, d_k=64, d_v=64, d_model=512, optimizer="adam", null_token_value=0):
     return build_transformer(
         source_vocabulary_size=source_vocabulary_size, target_vocabulary_size=target_vocabulary_size,
         max_length=max_length, share_word_embedding=share_word_embedding,
-        n=n, h=h, d_k=d_k, d_v=d_v,d_model=d_model, optimizer=optimizer, null_token_value=null_token_value)        
-        
+        n=n, h=h, d_k=d_k, d_v=d_v, d_model=d_model, optimizer=optimizer, null_token_value=null_token_value)
+
 
 def _get_loss(args, null_token_value):
     y_pred, y_true = args
