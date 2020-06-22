@@ -3,10 +3,10 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Dense, Lambda, TimeDistributed, \
     Add, Dropout, Concatenate, Activation, Layer
 from tensorflow.keras.initializers import Ones, Zeros
-
+# from kulc.attention import ScaledDotProductAttention
 
 class ScaledDotProductAttention():
-    def __init__(self, attn_dropout=0.1):
+    def __init__(self, attn_dropout=0.0):
         self._dropout = Dropout(attn_dropout)
 
     def __call__(self, q, k, v, mask):  # mask_k or mask_qk
@@ -23,23 +23,23 @@ class ScaledDotProductAttention():
 
 class MultiHeadAttention(object):
     # mode 0 - big matrices, faster; mode 1 - more clear implementation
-    def __init__(self, n_head, d_k, d_v, d_model, dropout=0.1, return_attention=False, mode=0):
+    def __init__(self, h, d_k, d_v, d_model, dropout=0.1, return_attention=False, mode=0):
         self._mode = mode
-        self._n_head = n_head
+        self._n_head = h
         self._d_k = d_k
         self._d_v = d_v
         self._d_model = d_model
         self._dropout = dropout
         self._return_attention = return_attention
         if self._mode == 0:
-            self._qs_layer = Dense(n_head * d_k, use_bias=False)
-            self._ks_layer = Dense(n_head * d_k, use_bias=False)
-            self._vs_layer = Dense(n_head * d_v, use_bias=False)
+            self._qs_layer = Dense(self._n_head * d_k, use_bias=False)
+            self._ks_layer = Dense(self._n_head * d_k, use_bias=False)
+            self._vs_layer = Dense(self._n_head * d_v, use_bias=False)
         elif self._mode == 1:
             self._qs_layers = []
             self._ks_layers = []
             self._vs_layers = []
-            for _ in range(n_head):
+            for _ in range(self._n_head):
                 self._qs_layers.append(TimeDistributed(Dense(d_k, use_bias=False)))
                 self._ks_layers.append(TimeDistributed(Dense(d_k, use_bias=False)))
                 self._vs_layers.append(TimeDistributed(Dense(d_v, use_bias=False)))

@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "bin/python3.6",
+    "python.dataScience.jupyterServerURI": "http://127.0.0.1:8888/?token=41ca6e78caddab6ba1f59efbcd6b39c181f00c85e0f55140"
+}
